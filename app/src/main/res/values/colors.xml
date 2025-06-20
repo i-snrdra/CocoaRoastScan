@@ -2,4 +2,16 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- Custom Colors -->
+    <color name="primary_blue">#3498DB</color>
+    <color name="primary_purple">#9B59B6</color>
+    <color name="dark_blue">#2C3E50</color>
+    <color name="medium_gray">#7F8C8D</color>
+    <color name="light_gray">#BDC3C7</color>
+    <color name="background_gray">#F5F5F5</color>
+    <color name="dikupas_green">#27AE60</color>
+    <color name="tidak_dikupas_orange">#E67E22</color>
+    <color name="card_white">#FFFFFF</color>
+    <color name="text_primary">#34495E</color>
 </resources>

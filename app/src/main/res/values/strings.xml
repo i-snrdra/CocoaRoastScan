@@ -1,3 +1,17 @@
 <resources>
-    <string name="app_name">CocoaRoastScan</string>
+    <string name="app_name">Cocoa Roast Scanner</string>
+    <string name="camera_permission_required">Permission kamera diperlukan untuk menggunakan fitur scan</string>
+    <string name="capture_photo">📷 Capture</string>
+    <string name="upload_photo">📁 Upload</string>
+    <string name="classification_result">Hasil Klasifikasi</string>
+    <string name="no_result">Belum ada hasil</string>
+    <string name="dikupas">Dikupas</string>
+    <string name="tidak_dikupas">Tidak Dikupas</string>
+    <string name="confidence">Confidence: %d%%</string>
+    <string name="scan_instruction">Scan biji kakao untuk mengetahui apakah dikupas atau tidak dikupas</string>
+    <string name="error_classification">Gagal melakukan klasifikasi</string>
+    <string name="error_camera">Gagal memulai kamera</string>
+    <string name="error_capture">Gagal mengambil gambar</string>
+    <string name="error_process_image">Gagal memproses gambar</string>
+    <string name="cannot_classify">Tidak dapat mengklasifikasi</string>
 </resources>
