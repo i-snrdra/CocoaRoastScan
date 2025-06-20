@@ -12,38 +12,63 @@ import java.nio.channels.FileChannel
 
 class TensorFlowHelper(private val context: Context) {
     
-    private var interpreter: Interpreter? = null
-    private val modelPath = "model_a.tflite"
-    private val inputSize = 224 // Ukuran input gambar, sesuaikan dengan model Anda
+    // Multiple interpreters untuk setiap model
+    private var interpreterA: Interpreter? = null // Dikupas/Tidak Dikupas
+    private var interpreterB: Interpreter? = null // Durasi (4,5,6,7 menit)
+    private var interpreterC: Interpreter? = null // Untuk Tidak Dikupas
+    private var interpreterD: Interpreter? = null // Warna (coklat muda, coklat, hitam)
+    
+    private val inputSize = 256 // Sesuaikan dengan Colab: (256, 256)
     private val pixelSize = 3 // RGB
     private val imageMean = 0f
     private val imageStd = 255f
-    private val maxResults = 2 // Dikupas atau Tidak Dikupas
     
-    // Labels untuk klasifikasi
-    private val labels = arrayOf("Tidak Dikupas", "Dikupas")
+    // Labels untuk setiap model
+    private val labelsA = arrayOf("Dikupas", "Tidak Dikupas")
+    private val labelsB = arrayOf("4", "5", "6", "7") // Durasi untuk biji dikupas
+    private val labelsC = arrayOf("4", "5", "6", "7") // Durasi untuk biji tidak dikupas
+    private val labelsD = arrayOf("coklat_muda", "coklat", "hitam")
     
     data class Recognition(
         val label: String,
         val confidence: Float
     )
     
+    data class ScanResult(
+        val kulitResult: Recognition,
+        val durationResult: Recognition, // Selalu ada, baik dari model B atau C
+        val colorResult: Recognition
+    )
+    
     init {
-        setupInterpreter()
+        setupInterpreters()
     }
     
-    private fun setupInterpreter() {
+    private fun setupInterpreters() {
         try {
-            val model = loadModelFile()
-            interpreter = Interpreter(model)
-            Log.d("TensorFlowHelper", "Model berhasil dimuat")
+            // Load semua model
+            interpreterA = Interpreter(loadModelFile("model_a.tflite"))
+            interpreterB = Interpreter(loadModelFile("model_b.tflite"))
+            interpreterC = Interpreter(loadModelFile("model_c.tflite"))
+            interpreterD = Interpreter(loadModelFile("model_d.tflite"))
+            
+            Log.d("TensorFlowHelper", "Semua model berhasil dimuat")
+            
+            // Debug log untuk semua model
+            interpreterA?.let { interp ->
+                val inputTensor = interp.getInputTensor(0)
+                val outputTensor = interp.getOutputTensor(0)
+                Log.d("TensorFlowHelper", "Model A - Input shape: ${inputTensor.shape().contentToString()}")
+                Log.d("TensorFlowHelper", "Model A - Output shape: ${outputTensor.shape().contentToString()}")
+            }
         } catch (e: Exception) {
             Log.e("TensorFlowHelper", "Error memuat model: ${e.message}")
+            Log.e("TensorFlowHelper", "Pastikan semua file model (model_a.tflite, model_b.tflite, model_c.tflite, model_d.tflite) ada di app/src/main/assets/")
         }
     }
     
-    private fun loadModelFile(): MappedByteBuffer {
-        val assetFileDescriptor = context.assets.openFd(modelPath)
+    private fun loadModelFile(fileName: String): MappedByteBuffer {
+        val assetFileDescriptor = context.assets.openFd(fileName)
         val inputStream = FileInputStream(assetFileDescriptor.fileDescriptor)
         val fileChannel = inputStream.channel
         val startOffset = assetFileDescriptor.startOffset
@@ -51,26 +76,77 @@ class TensorFlowHelper(private val context: Context) {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
     
+    // Fungsi utama untuk workflow klasifikasi bertingkat
+    fun performFullScan(bitmap: Bitmap): ScanResult? {
+        if (interpreterA == null || interpreterB == null || interpreterC == null || interpreterD == null) {
+            Log.e("TensorFlowHelper", "Salah satu model belum diinisialisasi")
+            return null
+        }
+        
+        try {
+            // Step 1: Klasifikasi kulit (Dikupas/Tidak Dikupas) dengan model_a
+            val kulitResult = classifyWithModel(bitmap, interpreterA!!, labelsA)
+            Log.d("TensorFlowHelper", "Hasil kulit: ${kulitResult.label} (${kulitResult.confidence})")
+            
+            // Step 2: Berdasarkan hasil kulit, gunakan model_b atau model_c untuk durasi
+            val durationResult = if (kulitResult.label == "Dikupas") {
+                // Jika Dikupas, gunakan model_b untuk durasi
+                val result = classifyWithModel(bitmap, interpreterB!!, labelsB)
+                Log.d("TensorFlowHelper", "Hasil durasi (dikupas): ${result.label} (${result.confidence})")
+                result
+            } else {
+                // Jika Tidak Dikupas, gunakan model_c untuk durasi
+                val result = classifyWithModel(bitmap, interpreterC!!, labelsC)
+                Log.d("TensorFlowHelper", "Hasil durasi (tidak dikupas): ${result.label} (${result.confidence})")
+                result
+            }
+            
+            // Step 3: Klasifikasi warna dengan model_d
+            val colorResult = classifyWithModel(bitmap, interpreterD!!, labelsD)
+            Log.d("TensorFlowHelper", "Hasil warna: ${colorResult.label} (${colorResult.confidence})")
+            
+            return ScanResult(
+                kulitResult = kulitResult,
+                durationResult = durationResult,
+                colorResult = colorResult
+            )
+            
+        } catch (e: Exception) {
+            Log.e("TensorFlowHelper", "Error dalam full scan: ${e.message}")
+            return null
+        }
+    }
+    
+    // Fungsi helper untuk klasifikasi dengan model tertentu
+    private fun classifyWithModel(bitmap: Bitmap, interpreter: Interpreter, labels: Array<String>): Recognition {
+        // Resize dan konversi bitmap
+        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+        val byteBuffer = convertBitmapToByteBuffer(resizedBitmap)
+        
+        // Siapkan output array
+        val outputArray = Array(1) { FloatArray(labels.size) }
+        
+        // Jalankan inference
+        interpreter.run(byteBuffer, outputArray)
+        
+        // Debug: Log output mentah
+        Log.d("TensorFlowHelper", "Raw output: ${outputArray[0].contentToString()}")
+        
+        // Konversi hasil ke Recognition object
+        val results = parseOutput(outputArray[0], labels)
+        return results.first() // Return hasil dengan confidence tertinggi
+    }
+    
+    // Backward compatibility untuk classifyImage
     fun classifyImage(bitmap: Bitmap): List<Recognition> {
-        if (interpreter == null) {
-            Log.e("TensorFlowHelper", "Interpreter belum diinisialisasi")
+        if (interpreterA == null) {
+            Log.e("TensorFlowHelper", "Interpreter A belum diinisialisasi")
             return emptyList()
         }
         
         try {
-            // Resize dan konversi bitmap
-            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-            val byteBuffer = convertBitmapToByteBuffer(resizedBitmap)
-            
-            // Siapkan output array
-            val outputArray = Array(1) { FloatArray(maxResults) }
-            
-            // Jalankan inference
-            interpreter?.run(byteBuffer, outputArray)
-            
-            // Konversi hasil ke Recognition objects
-            return parseOutput(outputArray[0])
-            
+            val result = classifyWithModel(bitmap, interpreterA!!, labelsA)
+            return listOf(result)
         } catch (e: Exception) {
             Log.e("TensorFlowHelper", "Error dalam klasifikasi: ${e.message}")
             return emptyList()
@@ -89,17 +165,17 @@ class TensorFlowHelper(private val context: Context) {
             for (j in 0 until inputSize) {
                 val value = intValues[pixel++]
                 
-                // Ekstrak nilai RGB dan normalisasi
-                byteBuffer.putFloat(((value shr 16 and 0xFF) - imageMean) / imageStd)
-                byteBuffer.putFloat(((value shr 8 and 0xFF) - imageMean) / imageStd)
-                byteBuffer.putFloat(((value and 0xFF) - imageMean) / imageStd)
+                // Ekstrak nilai RGB tanpa normalisasi dulu (seperti di Colab)
+                byteBuffer.putFloat((value shr 16 and 0xFF).toFloat())
+                byteBuffer.putFloat((value shr 8 and 0xFF).toFloat())
+                byteBuffer.putFloat((value and 0xFF).toFloat())
             }
         }
         
         return byteBuffer
     }
     
-    private fun parseOutput(output: FloatArray): List<Recognition> {
+    private fun parseOutput(output: FloatArray, labels: Array<String>): List<Recognition> {
         val recognitions = mutableListOf<Recognition>()
         
         for (i in output.indices) {
@@ -114,7 +190,13 @@ class TensorFlowHelper(private val context: Context) {
     }
     
     fun close() {
-        interpreter?.close()
-        interpreter = null
+        interpreterA?.close()
+        interpreterB?.close()
+        interpreterC?.close()
+        interpreterD?.close()
+        interpreterA = null
+        interpreterB = null
+        interpreterC = null
+        interpreterD = null
     }
 } 

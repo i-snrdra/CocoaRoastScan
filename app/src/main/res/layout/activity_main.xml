@@ -32,7 +32,7 @@
         android:layout_marginStart="24dp"
         android:layout_marginTop="8dp"
         android:layout_marginEnd="24dp"
-        android:text="Scan biji kakao untuk mengetahui apakah dikupas atau tidak dikupas"
+        android:text="Scan biji kakao untuk mengetahui kondisi kulit, durasi, dan warna"
         android:textColor="#7F8C8D"
         android:textSize="14sp"
         android:gravity="center"
@@ -146,12 +146,13 @@
                 android:id="@+id/tvResult"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Belum ada hasil"
+                android:text="Belum ada hasil\n\n📱 Ambil foto atau upload gambar biji kakao untuk memulai scan"
                 android:textColor="#34495E"
-                android:textSize="24sp"
-                android:textStyle="bold"
+                android:textSize="16sp"
+                android:textStyle="normal"
                 android:gravity="center"
-                android:layout_marginBottom="8dp" />
+                android:lineSpacingExtra="4dp"
+                android:layout_marginBottom="12dp" />
 
             <TextView
                 android:id="@+id/tvConfidence"
@@ -159,8 +160,9 @@
                 android:layout_height="wrap_content"
                 android:text=""
                 android:textColor="#7F8C8D"
-                android:textSize="16sp"
-                android:gravity="center" />
+                android:textSize="12sp"
+                android:gravity="center"
+                android:lineSpacingExtra="2dp" />
 
             <ProgressBar
                 android:id="@+id/progressBar"

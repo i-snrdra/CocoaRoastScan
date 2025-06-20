@@ -167,13 +167,15 @@ class MainActivity : AppCompatActivity() {
         val imageCapture = imageCapture ?: return
         
         // Capture ke memory
+        val contentValues = android.content.ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "cocoa_scan_${System.currentTimeMillis()}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        }
+        
         val outputFileOptions = ImageCapture.OutputFileOptions.Builder(
             contentResolver,
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues = android.content.ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "cocoa_scan_${System.currentTimeMillis()}.jpg")
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            }
+            contentValues
         ).build()
         
         imageCapture.takePicture(
@@ -262,26 +264,13 @@ class MainActivity : AppCompatActivity() {
         
         lifecycleScope.launch {
             try {
-                val results = withContext(Dispatchers.Default) {
-                    tensorFlowHelper.classifyImage(bitmap)
+                val scanResult = withContext(Dispatchers.Default) {
+                    tensorFlowHelper.performFullScan(bitmap)
                 }
                 
-                // Update UI dengan hasil
-                if (results.isNotEmpty()) {
-                    val topResult = results[0]
-                    val confidence = (topResult.confidence * 100).toInt()
-                    
-                    binding.tvResult.text = topResult.label
-                    binding.tvConfidence.text = "Confidence: $confidence%"
-                    
-                    // Ubah warna text berdasarkan hasil
-                    val color = if (topResult.label == "Dikupas") {
-                        ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
-                    } else {
-                        ContextCompat.getColor(this@MainActivity, android.R.color.holo_orange_dark)
-                    }
-                    binding.tvResult.setTextColor(color)
-                    
+                // Update UI dengan hasil lengkap
+                if (scanResult != null) {
+                    displayScanResults(scanResult)
                 } else {
                     binding.tvResult.text = "Tidak dapat mengklasifikasi"
                     binding.tvConfidence.text = ""
@@ -297,6 +286,55 @@ class MainActivity : AppCompatActivity() {
                 showLoading(false)
             }
         }
+    }
+    
+    private fun displayScanResults(scanResult: TensorFlowHelper.ScanResult) {
+        // Buat teks hasil yang lengkap dengan format yang lebih baik
+        val resultText = StringBuilder()
+        
+        // Header
+        resultText.append("🔍 HASIL SCAN BIJI KAKAO\n\n")
+        
+        // 1. Hasil kulit (Dikupas/Tidak Dikupas)
+        val kulitConfidence = (scanResult.kulitResult.confidence * 100).toInt()
+        resultText.append("🌰 Kondisi Kulit:\n")
+        resultText.append("   ${scanResult.kulitResult.label} (${kulitConfidence}%)\n\n")
+        
+        // 2. Hasil durasi (dari model B atau C)
+        val durasiConfidence = (scanResult.durationResult.confidence * 100).toInt()
+        resultText.append("⏱️ Durasi Roasting:\n")
+        resultText.append("   ${scanResult.durationResult.label} menit (${durasiConfidence}%)\n\n")
+        
+        // 3. Hasil warna
+        val colorConfidence = (scanResult.colorResult.confidence * 100).toInt()
+        val formattedColor = when (scanResult.colorResult.label) {
+            "coklat_muda" -> "Coklat Muda"
+            "coklat" -> "Coklat"
+            "hitam" -> "Hitam"
+            else -> scanResult.colorResult.label
+        }
+        resultText.append("🎨 Warna Biji:\n")
+        resultText.append("   $formattedColor (${colorConfidence}%)")
+        
+        // Update UI
+        binding.tvResult.text = resultText.toString()
+        
+        // Tampilkan informasi tambahan yang lebih simpel
+        val avgConfidence = (kulitConfidence + durasiConfidence + colorConfidence) / 3
+        
+        binding.tvConfidence.text = "📊 Tingkat Keyakinan Rata-rata: ${avgConfidence}%\n\n✅ Scan berhasil menggunakan 4 model AI"
+        
+        // Ubah warna text berdasarkan hasil kulit
+        val color = if (scanResult.kulitResult.label == "Dikupas") {
+            ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
+        } else {
+            ContextCompat.getColor(this@MainActivity, android.R.color.holo_orange_dark)
+        }
+        binding.tvResult.setTextColor(color)
+        
+        // Tampilkan toast dengan ringkasan
+        val toastMessage = "Biji kakao ${scanResult.kulitResult.label.lowercase()} - ${scanResult.durationResult.label} menit - $formattedColor"
+        Toast.makeText(this@MainActivity, toastMessage, Toast.LENGTH_LONG).show()
     }
     
     private fun showLoading(show: Boolean) {
