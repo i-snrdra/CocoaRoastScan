@@ -4,7 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import org.tensorflow.lite.Interpreter
+import java.io.BufferedReader
 import java.io.FileInputStream
+import java.io.InputStreamReader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
@@ -23,11 +25,11 @@ class TensorFlowHelper(private val context: Context) {
     private val imageMean = 0f
     private val imageStd = 255f
     
-    // Labels untuk setiap model
-    private val labelsA = arrayOf("Dikupas", "Tidak Dikupas")
-    private val labelsB = arrayOf("4", "5", "6", "7") // Durasi untuk biji dikupas
-    private val labelsC = arrayOf("4", "5", "6", "7") // Durasi untuk biji tidak dikupas
-    private val labelsD = arrayOf("coklat_muda", "coklat", "hitam")
+    // Labels untuk setiap model - akan dimuat dari file
+    private var labelsA: Array<String> = arrayOf()
+    private var labelsB: Array<String> = arrayOf()
+    private var labelsC: Array<String> = arrayOf()
+    private var labelsD: Array<String> = arrayOf()
     
     data class Recognition(
         val label: String,
@@ -37,11 +39,49 @@ class TensorFlowHelper(private val context: Context) {
     data class ScanResult(
         val kulitResult: Recognition,
         val durationResult: Recognition, // Selalu ada, baik dari model B atau C
-        val colorResult: Recognition
+        val colorResult: Recognition,
+        val formattedColor: String, // Warna dalam bahasa Inggris
+        val roastingStatus: String, // Status roasting berdasarkan warna
+        val averageConfidence: Float // Rata-rata confidence
     )
     
     init {
+        setupLabels()
         setupInterpreters()
+    }
+    
+    private fun setupLabels() {
+        try {
+            labelsA = loadLabelsFromFile("labels_a.txt")
+            labelsB = loadLabelsFromFile("labels_b.txt")
+            labelsC = loadLabelsFromFile("labels_c.txt")
+            labelsD = loadLabelsFromFile("labels_d.txt")
+            
+            Log.d("TensorFlowHelper", "Labels dimuat: A=${labelsA.size}, B=${labelsB.size}, C=${labelsC.size}, D=${labelsD.size}")
+        } catch (e: Exception) {
+            Log.e("TensorFlowHelper", "Error memuat labels: ${e.message}")
+            // Fallback ke hard-coded labels
+            labelsA = arrayOf("dikupas", "tidak_dikupas")
+            labelsB = arrayOf("4", "5", "6", "7")
+            labelsC = arrayOf("4", "5", "6", "7")
+            labelsD = arrayOf("cokelat", "cokelat_muda", "hitam")
+        }
+    }
+    
+    private fun loadLabelsFromFile(fileName: String): Array<String> {
+        val labels = mutableListOf<String>()
+        try {
+            val inputStream = context.assets.open(fileName)
+            val reader = BufferedReader(InputStreamReader(inputStream))
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                line?.let { labels.add(it.trim()) }
+            }
+            reader.close()
+        } catch (e: Exception) {
+            Log.e("TensorFlowHelper", "Error membaca file label $fileName: ${e.message}")
+        }
+        return labels.toTypedArray()
     }
     
     private fun setupInterpreters() {
@@ -76,6 +116,26 @@ class TensorFlowHelper(private val context: Context) {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
     
+    // Fungsi untuk mapping warna ke bahasa Inggris
+    private fun mapColorToEnglish(originalColor: String): String {
+        return when (originalColor) {
+            "cokelat_muda" -> "Light Brown"
+            "cokelat" -> "Brown"
+            "hitam" -> "Dark Brown"
+            else -> originalColor
+        }
+    }
+    
+    // Fungsi untuk interpretasi status roasting berdasarkan warna
+    private fun getRoastingStatus(englishColor: String): String {
+        return when (englishColor) {
+            "Light Brown" -> "Belum Matang"
+            "Brown" -> "Matang"
+            "Dark Brown" -> "Terlalu Matang"
+            else -> "Status Tidak Diketahui"
+        }
+    }
+    
     // Fungsi utama untuk workflow klasifikasi bertingkat
     fun performFullScan(bitmap: Bitmap): ScanResult? {
         if (interpreterA == null || interpreterB == null || interpreterC == null || interpreterD == null) {
@@ -89,7 +149,7 @@ class TensorFlowHelper(private val context: Context) {
             Log.d("TensorFlowHelper", "Hasil kulit: ${kulitResult.label} (${kulitResult.confidence})")
             
             // Step 2: Berdasarkan hasil kulit, gunakan model_b atau model_c untuk durasi
-            val durationResult = if (kulitResult.label == "Dikupas") {
+            val durationResult = if (kulitResult.label == "dikupas") {
                 // Jika Dikupas, gunakan model_b untuk durasi
                 val result = classifyWithModel(bitmap, interpreterB!!, labelsB)
                 Log.d("TensorFlowHelper", "Hasil durasi (dikupas): ${result.label} (${result.confidence})")
@@ -105,10 +165,20 @@ class TensorFlowHelper(private val context: Context) {
             val colorResult = classifyWithModel(bitmap, interpreterD!!, labelsD)
             Log.d("TensorFlowHelper", "Hasil warna: ${colorResult.label} (${colorResult.confidence})")
             
+            // Step 4: Mapping warna dan status roasting
+            val formattedColor = mapColorToEnglish(colorResult.label)
+            val roastingStatus = getRoastingStatus(formattedColor)
+            
+            // Step 5: Hitung rata-rata confidence
+            val averageConfidence = (kulitResult.confidence + durationResult.confidence + colorResult.confidence) / 3
+            
             return ScanResult(
                 kulitResult = kulitResult,
                 durationResult = durationResult,
-                colorResult = colorResult
+                colorResult = colorResult,
+                formattedColor = formattedColor,
+                roastingStatus = roastingStatus,
+                averageConfidence = averageConfidence
             )
             
         } catch (e: Exception) {

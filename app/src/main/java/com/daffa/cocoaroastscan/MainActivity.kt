@@ -297,43 +297,46 @@ class MainActivity : AppCompatActivity() {
         
         // 1. Hasil kulit (Dikupas/Tidak Dikupas)
         val kulitConfidence = (scanResult.kulitResult.confidence * 100).toInt()
+        val kulitLabel = when (scanResult.kulitResult.label) {
+            "dikupas" -> "Dikupas"
+            "tidak_dikupas" -> "Tidak Dikupas"
+            else -> scanResult.kulitResult.label
+        }
         resultText.append("🌰 Kondisi Kulit:\n")
-        resultText.append("   ${scanResult.kulitResult.label} (${kulitConfidence}%)\n\n")
+        resultText.append("   $kulitLabel (${kulitConfidence}%)\n\n")
         
         // 2. Hasil durasi (dari model B atau C)
         val durasiConfidence = (scanResult.durationResult.confidence * 100).toInt()
         resultText.append("⏱️ Durasi Roasting:\n")
         resultText.append("   ${scanResult.durationResult.label} menit (${durasiConfidence}%)\n\n")
         
-        // 3. Hasil warna
+        // 3. Hasil warna dengan mapping baru
         val colorConfidence = (scanResult.colorResult.confidence * 100).toInt()
-        val formattedColor = when (scanResult.colorResult.label) {
-            "coklat_muda" -> "Coklat Muda"
-            "coklat" -> "Coklat"
-            "hitam" -> "Hitam"
-            else -> scanResult.colorResult.label
-        }
         resultText.append("🎨 Warna Biji:\n")
-        resultText.append("   $formattedColor (${colorConfidence}%)")
+        resultText.append("   ${scanResult.formattedColor} (${colorConfidence}%)\n\n")
         
-        // Update UI
+        // 4. Status roasting berdasarkan warna
+        resultText.append("📊 Status Roasting:\n")
+        resultText.append("   ${scanResult.roastingStatus}")
+        
+        // Update UI dengan hasil lengkap
         binding.tvResult.text = resultText.toString()
         
-        // Tampilkan informasi tambahan yang lebih simpel
-        val avgConfidence = (kulitConfidence + durasiConfidence + colorConfidence) / 3
+        // Tampilkan rata-rata confidence dan informasi tambahan
+        val avgConfidence = (scanResult.averageConfidence * 100).toInt()
+        binding.tvConfidence.text = "📈 Tingkat Keyakinan Rata-rata: ${avgConfidence}%\n\n✅ Scan berhasil menggunakan 4 model AI"
         
-        binding.tvConfidence.text = "📊 Tingkat Keyakinan Rata-rata: ${avgConfidence}%\n\n✅ Scan berhasil menggunakan 4 model AI"
-        
-        // Ubah warna text berdasarkan hasil kulit
-        val color = if (scanResult.kulitResult.label == "Dikupas") {
-            ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
-        } else {
-            ContextCompat.getColor(this@MainActivity, android.R.color.holo_orange_dark)
+        // Ubah warna text berdasarkan status roasting
+        val color = when (scanResult.roastingStatus) {
+            "Matang" -> ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark)
+            "Belum Matang" -> ContextCompat.getColor(this@MainActivity, android.R.color.holo_orange_dark)
+            "Terlalu Matang" -> ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark)
+            else -> ContextCompat.getColor(this@MainActivity, android.R.color.darker_gray)
         }
         binding.tvResult.setTextColor(color)
         
         // Tampilkan toast dengan ringkasan
-        val toastMessage = "Biji kakao ${scanResult.kulitResult.label.lowercase()} - ${scanResult.durationResult.label} menit - $formattedColor"
+        val toastMessage = "Biji kakao $kulitLabel - ${scanResult.durationResult.label} menit - ${scanResult.formattedColor} (${scanResult.roastingStatus})"
         Toast.makeText(this@MainActivity, toastMessage, Toast.LENGTH_LONG).show()
     }
     
